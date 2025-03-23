@@ -1,0 +1,113 @@
+name: Create S3 Buckets and Setup Replication
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-buckets-and-replication:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up AWS CLI
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: eu-west-1
+
+    - name: Create S3 Buckets
+      run: |
+        # Define bucket names and replication configuration
+        SOURCE=awsde-rep-ver-src
+        DEST=awsde-rep-ver-dest
+        ROLE_NAME=ReplicationRole
+        POLICY_FILE=replication-policy.json
+        
+        # Create the first bucket and enable versioning
+        aws s3api create-bucket --bucket $SOURCE --region us-east-1
+        aws s3api put-bucket-versioning --bucket $SOURCE --versioning-configuration Status=Enabled
+
+        # Create the second bucket and enable versioning
+        aws s3api create-bucket --bucket $DEST --region us-east-1
+        aws s3api put-bucket-versioning --bucket $DEST --versioning-configuration Status=Enabled
+
+        # Create an IAM role for replication
+        cat <<EoF > $POLICY_FILE
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+        EoF
+        aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document file://$POLICY_FILE
+
+        # Attach policy to the role
+        cat <<EoF > replication-policy.json
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                    "s3:ListBucket",
+                    "s3:GetReplicationConfiguration",
+                    "s3:GetObjectVersionForReplication",
+                    "s3:GetObjectVersionAcl",
+                    "s3:GetObjectVersionTagging",
+                    "s3:GetObjectRetention",
+                    "s3:GetObjectLegalHold"
+              ],
+              "Resource": [
+                "arn:aws:s3:::$SOURCE",
+                "arn:aws:s3:::$SOURCE/*",
+                "arn:aws:s3:::DEST",
+                "arn:aws:s3:::DEST/*"
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ReplicateObject",
+                "s3:ReplicateDelete",
+                "s3:ReplicateTags"
+              ],
+              "Resource": "arn:aws:s3:::$DEST/*"
+            }
+          ]
+        }
+        EoF
+        aws iam put-role-policy --role-name $ROLE_NAME --policy-name ReplicationPolicy --policy-document file://replication-policy.json
+
+        # Get the role ARN
+        ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query "Role.Arn" --output text)
+
+        # Set up replication configuration
+        cat <<EoF > replication-config.json
+        {
+          "Role": "$ROLE_ARN",
+          "Rules": [
+            {
+              "Status": "Enabled",
+              "Priority": 1,
+              "Filter": {},
+              "DeleteMarkerReplication": {
+                "Status": "Disabled"
+              },
+              "Destination": {
+                "Bucket": "arn:aws:s3:::$DEST"
+              }
+            }
+          ]
+        }
+        EoF
+        aws s3api put-bucket-replication --bucket $SOURCE --replication-configuration file://replication-config.json
