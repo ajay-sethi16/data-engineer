@@ -21,8 +21,8 @@ jobs:
     - name: Create S3 Buckets
       run: |
         # Define bucket names and replication configuration
-        SOURCE=awsde-rep-ver-src
-        DEST=awsde-rep-ver-dest
+        SOURCE=aws-de-repl-source
+        DEST=aws-de-repl-dest
         ROLE_NAME=ReplicationRole
         POLICY_FILE=replication-policy.json
         
@@ -70,8 +70,8 @@ jobs:
               "Resource": [
                 "arn:aws:s3:::$SOURCE",
                 "arn:aws:s3:::$SOURCE/*",
-                "arn:aws:s3:::DEST",
-                "arn:aws:s3:::DEST/*"
+                "arn:aws:s3:::$DEST",
+                "arn:aws:s3:::$DEST/*"
               ]
             },
             {
