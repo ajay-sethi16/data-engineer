@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
    inputs:
      testing_bucket_name:
-      description: awsde-storage-testing-bucket
+      description: Enter your bucket
       required: true
 
 
